@@ -4,6 +4,7 @@
 
 #include "./alex/alex.h"
 #include "./alexol/alex.h"
+#include "./alex_rls/alex_rls.h"
 #include "./artsync/artrowex.h"
 #include "./artsync/artolc.h"
 #include "./artsync/artunsync.h"
@@ -21,12 +22,14 @@
 #include "sali/sali.h"
 // #include "kanva/kanva_RS.h"
 #include "kanva/kanva_impl.h"
-#include "masstree/masstree.h"
+// #include "masstree/masstree.h"
 #include "iostream"
 
 // Include DILI variants last to avoid macro conflicts
 #include "dili/dili.h"
 #include "dilax/dilax.h"
+
+#include "dytis/dytis.h"
 
 template<class KEY_TYPE, class PAYLOAD_TYPE>
 indexInterface<KEY_TYPE, PAYLOAD_TYPE> *get_index(std::string index_type) {
@@ -36,6 +39,9 @@ indexInterface<KEY_TYPE, PAYLOAD_TYPE> *get_index(std::string index_type) {
   }
   else if(index_type == "alex") {
     index = new alexInterface<KEY_TYPE, PAYLOAD_TYPE>;
+  }
+  else if (index_type == "alex_rls") {
+    index = new alexRlsInterface<KEY_TYPE, PAYLOAD_TYPE>;
   }
   else if (index_type == "btreeolc") {
     index = new BTreeOLCInterface<KEY_TYPE, PAYLOAD_TYPE>;
@@ -52,9 +58,9 @@ indexInterface<KEY_TYPE, PAYLOAD_TYPE> *get_index(std::string index_type) {
   else if( index_type == "hotrowex") {
     index = new HotRowexInterface<KEY_TYPE, PAYLOAD_TYPE>;
   }
-  else if (index_type == "masstree") {
-    index = new MasstreeInterface<KEY_TYPE, PAYLOAD_TYPE>;
-  }
+  // else if (index_type == "masstree") {
+  //   index = new MasstreeInterface<KEY_TYPE, PAYLOAD_TYPE>;
+  // }
   else if (index_type == "xindex") {
     index = new xindexInterface<KEY_TYPE, PAYLOAD_TYPE>;
   }
@@ -96,6 +102,9 @@ indexInterface<KEY_TYPE, PAYLOAD_TYPE> *get_index(std::string index_type) {
   }
   else if (index_type == "hyper") {
     index = new HyperInterface<KEY_TYPE, PAYLOAD_TYPE>;
+  }
+  else if (index_type == "dytis") {
+    index = new DyTISInterface<KEY_TYPE, PAYLOAD_TYPE>;
   }
   // else if (index_type == "kanva_rs") {
   //   index = new kanvaInterface<KEY_TYPE, PAYLOAD_TYPE>;

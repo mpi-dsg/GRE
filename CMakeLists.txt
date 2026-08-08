@@ -44,6 +44,7 @@ include_directories(SYSTEM src/competitor/dilax/src/src/utils)
 include_directories(SYSTEM src/competitor/dilax/src/src/butree)
 include_directories(SYSTEM src/competitor/dilax/src/src/dilax)
 include_directories(SYSTEM src/competitor/hyper/src/include)
+include_directories(SYSTEM src/competitor/dytis/src)
 
 add_compile_options(-faligned-new -march=native -g -O3)
 

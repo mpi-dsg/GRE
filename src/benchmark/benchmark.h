@@ -6,6 +6,7 @@
 #include <fstream>
 #include <getopt.h>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <random>
 #include <sstream>
@@ -32,6 +33,16 @@
 // throughput differences reflect index behaviour and not sampling differences.
 // Use --save_ops=<path> to write the generated batches to a binary file and
 // --load_ops=<path> to replay a previously saved file instead of generating.
+//
+// Optional rebuild simulation: --rebuild_every=N discards the index after
+// every N batches and bulk-loads a fresh instance from the active key set at
+// that point, timing the rebuild. This simulates an operator-triggered full
+// re-index (as opposed to whatever local self-maintenance the index already
+// does on every insert) and answers "does periodic re-indexing fix the
+// honeymoon effect, and at what cost" empirically rather than analytically.
+// Rebuild events are logged to --rebuild_log=<path> (batch index, key count,
+// wall-clock time), separate from the main --output_path CSV so existing
+// analysis scripts are unaffected.
 
 template <typename KEY_TYPE, typename PAYLOAD_TYPE>
 class Benchmark {
@@ -78,6 +89,15 @@ class Benchmark {
 
   std::string save_ops_path;
   std::string load_ops_path;
+
+  // rebuild simulation: rebuild_every=0 disables it; otherwise the index is
+  // discarded and freshly bulk-loaded after every rebuild_every-th batch.
+  // rebuild_snapshots[i] holds the active-key set immediately after batch i
+  // (0-indexed), captured once during pregeneration and reused for every
+  // index_type so all indexes are rebuilt from the identical key set.
+  int rebuild_every = 0;
+  std::string rebuild_log_path;
+  std::map<size_t, std::vector<KEY_TYPE>> rebuild_snapshots;
 
   OperationOrder operation_order    = ITERATE_SORT_UNSORTED;
 
@@ -179,6 +199,50 @@ public:
     COUT_THIS("bulk load done");
   }
 
+  // Discards *index and replaces it with a freshly bulk-loaded instance built
+  // from `snapshot` (the active key set at a batch boundary). Returns the
+  // wall-clock rebuild time in nanoseconds so callers can log cost per key
+  // count. Uses local arrays only -- never touches init_keys/init_key_values,
+  // which are shared across every index_type's initial bulk load.
+  double rebuild_index(index_t *&index, const std::vector<KEY_TYPE> &snapshot) {
+    std::vector<KEY_TYPE> sorted_keys = snapshot;
+    tbb::parallel_sort(sorted_keys.begin(), sorted_keys.end());
+
+    auto *kv = new std::pair<KEY_TYPE, PAYLOAD_TYPE>[sorted_keys.size()];
+    #pragma omp parallel for num_threads(thread_num)
+    for (size_t i = 0; i < sorted_keys.size(); ++i)
+      kv[i] = {sorted_keys[i], 123456789};
+
+    delete index;
+    index = get_index<KEY_TYPE, PAYLOAD_TYPE>(index_type);
+    Param param(thread_num, 0);
+    index->init(&param);
+
+    TSCNS tn; tn.init();
+    auto t0 = tn.rdtsc();
+    index->bulk_load(kv, sorted_keys.size(), &param);
+    auto t1 = tn.rdtsc();
+
+    delete[] kv;
+    return tn.tsc2ns(t1) - tn.tsc2ns(t0);
+  }
+
+  void log_rebuild(size_t batch_index, size_t n_keys, double elapsed_ns) {
+    if (rebuild_log_path.empty()) return;
+
+    if (!file_exists(rebuild_log_path)) {
+      std::ofstream h(rebuild_log_path, std::ios::app);
+      h << "timestamp,index_type,batch_index,n_keys,rebuild_ns\n";
+    }
+    std::time_t t = std::time(nullptr);
+    char ts[32];
+    std::strftime(ts, sizeof(ts), "%Y%m%d%H%M%S", std::localtime(&t));
+
+    std::ofstream o(rebuild_log_path, std::ios::app);
+    o << ts << "," << index_type << "," << batch_index << ","
+      << n_keys << "," << elapsed_ns << "\n";
+  }
+
   inline void parse_args(int argc, char **argv) {
     auto flags = parse_flags(argc, argv);
     keys_file_path      = get_required(flags, "keys_file");
@@ -206,6 +270,8 @@ public:
     data_shift          = get_boolean_flag(flags,  "data_shift");
     save_ops_path       = get_with_default(flags, "save_ops",           "");
     load_ops_path       = get_with_default(flags, "load_ops",           "");
+    rebuild_every       = stoi(get_with_default(flags, "rebuild_every", "0"));
+    rebuild_log_path    = get_with_default(flags, "rebuild_log",        "");
 
     // --indexes=alex,lipp,dili runs all listed indexes against the same ops
     {
@@ -349,6 +415,12 @@ public:
       COUT_THIS("  batch " << i+1 << "/" << n_runs
                 << "  ops=" << all_batch_ops[i].size()
                 << "  active_keys=" << sim_active.size());
+
+      // sim_active already reflects this batch's inserts/deletes, so this is
+      // exactly the key set an index would hold immediately after batch i.
+      // Only snapshot at requested boundaries -- these can be large.
+      if (rebuild_every > 0 && (i + 1) % rebuild_every == 0)
+        rebuild_snapshots[i] = sim_active;
     }
     COUT_THIS("Pre-generation complete.");
   }
@@ -639,6 +711,15 @@ public:
       for (size_t b = 0; b < all_batch_ops.size(); ++b) {
         COUT_THIS("  batch " << b+1 << "/" << all_batch_ops.size());
         run_batch(index, all_batch_ops[b]);
+
+        auto snap = rebuild_snapshots.find(b);
+        if (snap != rebuild_snapshots.end()) {
+          COUT_THIS("  rebuilding after batch " << b+1
+                    << " (" << snap->second.size() << " keys)...");
+          double ns = rebuild_index(index, snap->second);
+          COUT_THIS("  rebuild took " << ns / 1e6 << " ms");
+          log_rebuild(b, snap->second.size(), ns);
+        }
       }
 
       delete index;

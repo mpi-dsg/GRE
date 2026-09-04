@@ -1,0 +1,5 @@
+id,read_ratio,insert_ratio,update_ratio,scan_ratio,delete_ratio,key_path,index_type,throughput,init_table_size,memory_consumption,thread_num,min,50 percentile,90 percentile,99 percentile,99.9 percentile,99.99 percentile,max,avg,seed,scan_num,latency_variance,latency_sample,data_shift,pgm,error_bound,table_size
+20260904201241,0.5,0.5,0,0,0,./datasets/libio,alex,2944903,50000000,4863475544,1,0,336,592,1120,5424,87696,1.96104e+07,425.349,5,100,1.55532e+08,1,0,0,64,200000000
+20260904201540,0.5,0.5,0,0,0,./datasets/libio,lipp,3238761,50000000,17879924968,1,0,112,512,2352,4800,7680,1.47173e+07,233.319,5,100,1.65235e+08,1,0,0,64,200000000
+20260904201949,0.5,0.5,0,0,0,./datasets/libio,artunsync,2811416,50000000,9036116688,1,16,48,480,1104,4352,8048,2.08842e+07,224.443,5,100,1.92289e+08,1,0,0,64,200000000
+20260904202434,0.5,0.5,0,0,0,./datasets/libio,btree,1389569,50000000,0,1,112,704,960,1296,5632,8800,1.07305e+07,743.246,5,100,3.85543e+07,1,0,0,64,200000000

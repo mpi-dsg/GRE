@@ -1,0 +1,5 @@
+id,read_ratio,insert_ratio,update_ratio,scan_ratio,delete_ratio,key_path,index_type,throughput,init_table_size,memory_consumption,thread_num,min,50 percentile,90 percentile,99 percentile,99.9 percentile,99.99 percentile,max,avg,seed,scan_num,latency_variance,latency_sample,data_shift,pgm,error_bound,table_size
+20260904202849,0.5,0.5,0,0,0,./datasets/planet,alex,1799977,50000000,4873281168,1,0,544,960,1600,7872,74512,2.10663e+07,656.195,5,100,2.16276e+08,1,0,0,64,200000000
+20260904203251,0.5,0.5,0,0,0,./datasets/planet,lipp,1976926,50000000,18370150058,1,0,416,1072,2400,5136,8640,1.22192e+07,502.346,5,100,9.76927e+07,1,0,0,64,200000000
+20260904203731,0.5,0.5,0,0,0,./datasets/planet,artunsync,2196821,50000000,11159937460,1,16,432,640,1200,4240,8128,1.86755e+06,481.344,5,100,1.27454e+06,1,0,0,64,200000000
+20260904204216,0.5,0.5,0,0,0,./datasets/planet,btree,1387770,50000000,0,1,128,704,960,1296,5792,9088,2.07492e+07,750.018,5,100,1.69422e+08,1,0,0,64,200000000

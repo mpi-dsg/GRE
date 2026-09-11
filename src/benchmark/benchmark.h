@@ -700,10 +700,7 @@ public:
            "r_min,r_p50,r_p90,r_p99,r_p999,r_p9999,r_max,r_avg,"
            "w_min,w_p50,w_p90,w_p99,w_p999,w_p9999,w_max,w_avg,"
            "seed,scan_num,r_var,w_var,latency_sample,data_shift,"
-           "pgm,error_bound,file_table_size,"
-           "intended_read,success_read,intended_insert,success_insert,"
-           "intended_update,success_update,intended_delete,success_remove,"
-           "intended_scan,scan_short\n";
+           "pgm,error_bound,file_table_size\n";
     }
 
     std::time_t t = std::time(nullptr);
@@ -743,12 +740,7 @@ public:
       << var_r << "," << var_w << ","
       << latency_sample << "," << data_shift << ","
       << stat.fitness_of_dataset << "," << error_bound << ","
-      << table_size << ","
-      << stat.intended_read << "," << stat.success_read << ","
-      << stat.intended_insert << "," << stat.success_insert << ","
-      << stat.intended_update << "," << stat.success_update << ","
-      << stat.intended_delete << "," << stat.success_remove << ","
-      << stat.intended_scan << "," << stat.scan_not_enough << "\n";
+      << table_size << "\n";
     o.close();
 
     if (clear_flag) stat.clear();

@@ -125,6 +125,11 @@ class Benchmark {
     uint64_t  success_update      = 0;
     uint64_t  success_remove      = 0;
     uint64_t  scan_not_enough     = 0;
+    uint64_t  intended_read       = 0;
+    uint64_t  intended_insert     = 0;
+    uint64_t  intended_update     = 0;
+    uint64_t  intended_delete     = 0;
+    uint64_t  intended_scan       = 0;
 
     void clear() {
       read_latency.clear();
@@ -132,6 +137,8 @@ class Benchmark {
       throughput = fitness_of_dataset = memory_consumption = 0;
       success_insert = success_read = success_update =
         success_remove = scan_not_enough = 0;
+      intended_read = intended_insert = intended_update =
+        intended_delete = intended_scan = 0;
     }
   } stat;
 
@@ -488,6 +495,33 @@ public:
     return true;
   }
 
+  // Reconstruct rebuild snapshots after --load_ops. Pregenerate builds them
+  // while simulating the active set; load_ops previously skipped that, so
+  // later indexes that reuse an ops cache never rebuilt.
+  void build_rebuild_snapshots_from_ops() {
+    rebuild_snapshots.clear();
+    if (rebuild_every <= 0 || all_batch_ops.empty()) return;
+
+    std::vector<KEY_TYPE> sim_active = active_keys;
+    for (size_t i = 0; i < all_batch_ops.size(); ++i) {
+      for (const auto &op : all_batch_ops[i]) {
+        if (op.first == INSERT) {
+          sim_active.push_back(op.second);
+        } else if (op.first == DELETE) {
+          auto it = std::find(sim_active.begin(), sim_active.end(), op.second);
+          if (it != sim_active.end()) {
+            *it = sim_active.back();
+            sim_active.pop_back();
+          }
+        }
+      }
+      if ((static_cast<int>(i) + 1) % rebuild_every == 0)
+        rebuild_snapshots[i] = sim_active;
+    }
+    COUT_THIS("Built " << rebuild_snapshots.size()
+              << " rebuild snapshot(s) from loaded ops.");
+  }
+
   void run_batch(index_t *index,
                  std::vector<std::pair<Operation, KEY_TYPE>> &operations) {
     std::vector<param_t> params(thread_num);
@@ -581,12 +615,22 @@ public:
     // advance the running key count by the net change in this batch, counted
     // from the generated ops so it stays exact even if operations fail
     size_t n_ins = 0, n_del = 0;
+    uint64_t n_read = 0, n_upd = 0, n_scan = 0;
     for (auto &op : operations) {
       if (op.first == INSERT) ++n_ins;
       else if (op.first == DELETE) ++n_del;
+      else if (op.first == READ) ++n_read;
+      else if (op.first == UPDATE) ++n_upd;
+      else if (op.first == SCAN) ++n_scan;
     }
     current_table_size += n_ins;
     if (current_table_size >= n_del) current_table_size -= n_del;
+
+    stat.intended_read = n_read;
+    stat.intended_insert = n_ins;
+    stat.intended_update = n_upd;
+    stat.intended_delete = n_del;
+    stat.intended_scan = n_scan;
 
     print_stat();
   }
@@ -617,9 +661,36 @@ public:
       var_w /= stat.write_latency.size();
     }
 
-    printf("Throughput=%llu  Memory=%lld  reads=%llu  inserts=%llu\n",
-           stat.throughput, stat.memory_consumption,
-           stat.success_read, stat.success_insert);
+    auto ok_line = [](uint64_t intended, uint64_t success) -> const char * {
+      return intended == success ? "OK" : "FAIL";
+    };
+    printf("Throughput=%llu  Memory=%lld\n",
+           (unsigned long long)stat.throughput, (long long)stat.memory_consumption);
+    printf("OpCheck read   intended=%llu success=%llu %s\n",
+           (unsigned long long)stat.intended_read,
+           (unsigned long long)stat.success_read,
+           ok_line(stat.intended_read, stat.success_read));
+    printf("OpCheck insert intended=%llu success=%llu %s\n",
+           (unsigned long long)stat.intended_insert,
+           (unsigned long long)stat.success_insert,
+           ok_line(stat.intended_insert, stat.success_insert));
+    printf("OpCheck update intended=%llu success=%llu %s\n",
+           (unsigned long long)stat.intended_update,
+           (unsigned long long)stat.success_update,
+           ok_line(stat.intended_update, stat.success_update));
+    printf("OpCheck delete intended=%llu success=%llu %s\n",
+           (unsigned long long)stat.intended_delete,
+           (unsigned long long)stat.success_remove,
+           ok_line(stat.intended_delete, stat.success_remove));
+    printf("OpCheck scan   intended=%llu short=%llu\n",
+           (unsigned long long)stat.intended_scan,
+           (unsigned long long)stat.scan_not_enough);
+    bool all_ok =
+        stat.intended_read == stat.success_read &&
+        stat.intended_insert == stat.success_insert &&
+        stat.intended_update == stat.success_update &&
+        stat.intended_delete == stat.success_remove;
+    printf("OpCheck ALL_OPS %s\n", all_ok ? "OK" : "FAIL");
 
     if (!file_exists(output_path)) {
       std::ofstream h(output_path, std::ios::app);
@@ -629,7 +700,10 @@ public:
            "r_min,r_p50,r_p90,r_p99,r_p999,r_p9999,r_max,r_avg,"
            "w_min,w_p50,w_p90,w_p99,w_p999,w_p9999,w_max,w_avg,"
            "seed,scan_num,r_var,w_var,latency_sample,data_shift,"
-           "pgm,error_bound,file_table_size\n";
+           "pgm,error_bound,file_table_size,"
+           "intended_read,success_read,intended_insert,success_insert,"
+           "intended_update,success_update,intended_delete,success_remove,"
+           "intended_scan,scan_short\n";
     }
 
     std::time_t t = std::time(nullptr);
@@ -669,7 +743,12 @@ public:
       << var_r << "," << var_w << ","
       << latency_sample << "," << data_shift << ","
       << stat.fitness_of_dataset << "," << error_bound << ","
-      << table_size << "\n";
+      << table_size << ","
+      << stat.intended_read << "," << stat.success_read << ","
+      << stat.intended_insert << "," << stat.success_insert << ","
+      << stat.intended_update << "," << stat.success_update << ","
+      << stat.intended_delete << "," << stat.success_remove << ","
+      << stat.intended_scan << "," << stat.scan_not_enough << "\n";
     o.close();
 
     if (clear_flag) stat.clear();
@@ -690,6 +769,8 @@ public:
       pregenerate_all_batches();
       if (!save_ops_path.empty())
         save_ops_to_file(save_ops_path);
+    } else if (rebuild_every > 0) {
+      build_rebuild_snapshots_from_ops();
     }
     COUT_THIS("Total batches to replay: " << all_batch_ops.size());
 
